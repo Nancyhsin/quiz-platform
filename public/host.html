@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>主持人投影 · Quizly</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    body { background: var(--bg); }
+    .pickbox { max-width: 560px; margin: 80px auto; }
+
+    /* Countdown urgency */
+    .timer-ring.urgent { color: var(--danger); animation: pulse-tick .5s ease-in-out infinite; }
+    @keyframes pulse-tick { 0%,100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+
+    /* === Podium === */
+    .podium-stage {
+      display: flex; align-items: flex-end; justify-content: center; gap: 24px;
+      margin: 36px 0; padding: 0 24px;
+    }
+    .podium {
+      flex: 0 0 240px; text-align: center;
+      opacity: 0; transform: translateY(40px) scale(.85);
+      transition: opacity .9s cubic-bezier(.2,1,.3,1), transform .9s cubic-bezier(.2,1,.3,1);
+    }
+    .podium.revealed { opacity: 1; transform: none; }
+    .podium .avatar {
+      width: 96px; height: 96px; border-radius: 50%;
+      background: var(--gradient-tech); color: white;
+      display: grid; place-items: center; font-size: 40px; font-weight: 800;
+      margin: 0 auto 12px; box-shadow: 0 12px 32px -8px rgba(79,70,229,.55);
+      border: 4px solid white;
+    }
+    .podium .name { font-size: 22px; font-weight: 700; margin: 4px 0; letter-spacing: -.01em; }
+    .podium .meta { font-size: 13px; color: var(--text-soft); margin-bottom: 14px; }
+    .podium .score {
+      font-family: 'SF Mono', Consolas, monospace; font-size: 30px; font-weight: 800;
+      color: var(--primary); margin: 4px 0;
+    }
+    .podium .block {
+      border-radius: 16px 16px 0 0; padding: 24px 16px;
+      font-size: 64px; font-weight: 900; line-height: 1; color: white;
+      box-shadow: 0 -8px 30px -10px rgba(15,23,42,.25);
+    }
+    .podium.first  .block { background: linear-gradient(180deg, #FCD34D 0%, #F59E0B 100%); height: 220px; padding-top: 60px; font-size: 80px; }
+    .podium.second .block { background: linear-gradient(180deg, #E2E8F0 0%, #94A3B8 100%); height: 170px; padding-top: 40px; }
+    .podium.third  .block { background: linear-gradient(180deg, #FCA5A5 0%, #DC2626 100%); height: 130px; padding-top: 24px; }
+    .podium.first  .avatar { background: linear-gradient(135deg, #F59E0B, #FCD34D); box-shadow: 0 12px 32px -8px rgba(245,158,11,.55); }
+    .podium.second .avatar { background: linear-gradient(135deg, #64748B, #CBD5E1); box-shadow: 0 12px 32px -8px rgba(100,116,139,.55); }
+    .podium.third  .avatar { background: linear-gradient(135deg, #DC2626, #FCA5A5); box-shadow: 0 12px 32px -8px rgba(220,38,38,.55); }
+    .podium.first  .score  { color: #B45309; }
+
+    /* Confetti */
+    .confetti { position: fixed; top: -20px; width: 10px; height: 14px; pointer-events: none; z-index: 9999; opacity: 0;
+      animation: fall 3.2s linear forwards; }
+    @keyframes fall {
+      0%   { opacity: 1; transform: translateY(-20px) rotate(0deg); }
+      100% { opacity: 0; transform: translateY(105vh) rotate(720deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Picker shown when no session in URL -->
+  <div id="picker" class="hidden">
+    <div class="pickbox card">
+      <h2 class="card-title">輸入現場代碼</h2>
+      <p class="card-sub">請從後台「建立現場代碼」取得，或直接帶入 ?s= 參數。</p>
+      <div class="row">
+        <input class="input" id="code-input" placeholder="例如：A3K9PX" style="letter-spacing: .2em; text-transform: uppercase; font-size: 22px; text-align: center;" />
+        <button class="btn btn-primary" id="code-go">前往</button>
+      </div>
+      <div class="divider"></div>
+      <a class="btn btn-ghost btn-block" href="/admin.html">先去後台建立活動</a>
+    </div>
+  </div>
+
+  <!-- Main host stage -->
+  <div id="stage" class="stage hidden">
+    <header class="stage-header">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 64 64" fill="none">
+            <circle cx="28" cy="32" r="13" stroke="white" stroke-width="4" fill="none"/>
+            <path d="M37 41 L46 50" stroke="white" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="46" cy="50" r="3.5" fill="white"/>
+            <path d="M48 14 L50 18 L54 20 L50 22 L48 26 L46 22 L42 20 L46 18 Z" fill="white" fill-opacity=".85"/>
+          </svg>
+        </div>
+        <div>
+          <div id="activity-name">活動載入中…</div>
+          <div class="brand-tag">Host · 現場代碼 <span id="code-tag" class="mono">—</span></div>
+        </div>
+      </div>
+      <div class="row">
+        <span class="pill pill-cyan" id="phase-pill">準備中</span>
+        <span class="pill pill-soft mono"><span id="player-count">0</span> 人已加入</span>
+        <div id="timer" class="timer-ring hidden">0</div>
+      </div>
+    </header>
+
+    <main class="stage-body" id="body">
+      <!-- Lobby view (default) -->
+      <section id="view-lobby">
+        <div class="qr-stage">
+          <div>
+            <div class="pill pill-cyan">參賽者掃描 QR Code 加入</div>
+            <h2 style="font-size: 40px; margin: 14px 0; letter-spacing: -.02em;">用手機掃描 QR Code<br/>或前往：</h2>
+            <div class="qr-help mono" id="join-url">—</div>
+            <div style="margin-top: 18px;">
+              <span class="text-soft" style="font-size: 14px;">現場代碼</span>
+              <div class="qr-code-pill" id="big-code">—</div>
+            </div>
+          </div>
+          <img id="qr-img" class="qr-img" alt="QR Code" />
+        </div>
+
+        <div class="card" style="margin-top: 24px;">
+          <div class="row-between" style="margin-bottom: 12px;">
+            <h3 style="margin: 0;">已加入參賽者</h3>
+            <span class="pill pill-soft mono"><span id="lobby-count">0</span> 人</span>
+          </div>
+          <div id="players-list" class="players-grid"></div>
+        </div>
+      </section>
+
+      <!-- Question view -->
+      <section id="view-question" class="hidden">
+        <div class="qheader">
+          <div>
+            <div class="qmeta">
+              <span class="pill pill-cyan" id="q-day"></span>
+              <span class="pill" id="q-set"></span>
+              <span class="pill pill-soft mono" id="q-no"></span>
+            </div>
+            <div class="qtext" id="q-text"></div>
+          </div>
+        </div>
+        <div class="options-grid" id="options-grid"></div>
+        <div class="row" style="margin-top: 16px;">
+          <span class="pill pill-soft mono"><span id="answered-count">0</span> / <span id="answered-total">0</span> 已作答</span>
+          <span class="spacer"></span>
+          <span class="pill pill-cyan hidden" id="explain-pill">主持人可按「顯示詳解」</span>
+        </div>
+        <div id="explain-card" class="card hidden" style="margin-top: 16px; background: var(--gradient-soft); border: none;">
+          <div class="text-soft" style="font-size: 13px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 8px;">詳解</div>
+          <div id="explain-text" style="font-size: 22px; line-height: 1.55;"></div>
+        </div>
+      </section>
+
+      <!-- Leaderboard view (in-game, top 10 list) -->
+      <section id="view-leaderboard" class="hidden">
+        <h2 style="margin: 0 0 16px; font-size: 32px; letter-spacing: -.02em;" id="lb-title">即時排行榜</h2>
+        <div id="lb-rows"></div>
+      </section>
+
+      <!-- Podium view (set/activity-end) -->
+      <section id="view-podium" class="hidden" style="text-align: center;">
+        <h2 id="podium-title" style="font-size: 40px; letter-spacing: -.02em; margin: 8px 0 12px;">🏆 排行榜</h2>
+        <p id="podium-subtitle" class="text-soft" style="margin: 0 0 12px; font-size: 18px;">公布前三名</p>
+        <div class="podium-stage">
+          <div class="podium second" id="podium-2">
+            <div class="avatar">2</div>
+            <div class="name">—</div>
+            <div class="meta">—</div>
+            <div class="score mono">0</div>
+            <div class="block">2</div>
+          </div>
+          <div class="podium first" id="podium-1">
+            <div class="avatar">1</div>
+            <div class="name">—</div>
+            <div class="meta">—</div>
+            <div class="score mono">0</div>
+            <div class="block">1</div>
+          </div>
+          <div class="podium third" id="podium-3">
+            <div class="avatar">3</div>
+            <div class="name">—</div>
+            <div class="meta">—</div>
+            <div class="score mono">0</div>
+            <div class="block">3</div>
+          </div>
+        </div>
+        <div id="podium-others"></div>
+      </section>
+
+      <!-- Ended view -->
+      <section id="view-ended" class="hidden">
+        <div class="card" style="text-align: center; padding: 64px 32px;">
+          <h2 style="font-size: 40px; letter-spacing: -.02em;">活動結束</h2>
+          <p class="text-soft" style="font-size: 18px;">感謝各位參賽者！可前往後台下載完整 Excel 成績。</p>
+          <a class="btn btn-primary btn-lg" id="download-final" target="_blank">下載 Excel 完整成績</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="stage-footer">
+      <button class="btn btn-primary" id="btn-next">▶ 下一題 / 開始</button>
+      <button class="btn" id="btn-reveal">公布答案</button>
+      <button class="btn" id="btn-explain">顯示詳解</button>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" id="btn-lobby">回到 QR 等待室</button>
+      <button class="btn btn-ghost" id="btn-mute">🔊 音效開</button>
+    </footer>
+  </div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = sel => document.querySelector(sel);
+const url = new URL(location.href);
+let sessionId = (url.searchParams.get('s') || '').toUpperCase();
+let socket = null;
+let currentQ = null;
+let timerInterval = null;
+let lastBeepSec = 999;
+
+// ========== Sound (Web Audio API, no external files) ==========
+let audioCtx = null;
+let muted = false;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function beep(freq, duration, volume = 0.25, type = 'sine') {
+  if (muted || !audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.frequency.value = freq;
+  osc.type = type;
+  const t = audioCtx.currentTime;
+  gain.gain.setValueAtTime(volume, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  osc.start(t);
+  osc.stop(t + duration);
+}
+const sfx = {
+  tick:      () => beep(880, 0.08, 0.18),
+  urgent:    () => { beep(1320, 0.1, 0.35); setTimeout(() => beep(1320, 0.1, 0.35), 110); },
+  timeUp:    () => { beep(440, 0.25, 0.35, 'sawtooth'); setTimeout(() => beep(330, 0.45, 0.35, 'sawtooth'), 250); },
+  correct:   () => { [523, 659, 784].forEach((f, i) => setTimeout(() => beep(f, 0.15, 0.3), i * 80)); },
+  fanfare:   () => {
+    // C major arpeggio rising
+    [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.22, 0.35, 'triangle'), i * 140));
+  },
+  podium3:   () => beep(523, 0.45, 0.35, 'triangle'),                              // C5
+  podium2:   () => { beep(659, 0.45, 0.4, 'triangle'); },                          // E5
+  podium1:   () => {
+    [784, 1047, 1319, 1568].forEach((f, i) => setTimeout(() => beep(f, 0.3, 0.4, 'triangle'), i * 150));
+  },
+};
+
+// Browsers block AudioContext until first user gesture
+document.addEventListener('click', () => ensureAudio(), { once: true });
+document.addEventListener('keydown', () => ensureAudio(), { once: true });
+
+if (!sessionId) {
+  $('#picker').classList.remove('hidden');
+  $('#code-go').onclick = () => {
+    const v = $('#code-input').value.trim().toUpperCase();
+    if (v) location.href = '/host.html?s=' + v;
+  };
+  $('#code-input').addEventListener('keydown', e => { if (e.key === 'Enter') $('#code-go').click(); });
+} else {
+  boot();
+}
+
+async function boot() {
+  $('#stage').classList.remove('hidden');
+  $('#code-tag').textContent = sessionId;
+  $('#big-code').textContent = sessionId;
+
+  let joinUrl = `${location.origin}/join.html?s=${sessionId}`;
+  try {
+    const j = await fetch(`/api/sessions/${sessionId}/join-url`).then(r => r.json());
+    if (j.join_url) joinUrl = j.join_url;
+  } catch (e) {}
+  $('#join-url').textContent = joinUrl;
+  $('#qr-img').src = `/api/sessions/${sessionId}/qrcode`;
+  $('#download-final').href = `/api/sessions/${sessionId}/export.xlsx`;
+
+  try {
+    const s = await fetch('/api/sessions/' + sessionId).then(r => r.json());
+    if (s.activity_name) $('#activity-name').textContent = s.activity_name;
+  } catch (e) {}
+
+  const players = await fetch(`/api/sessions/${sessionId}/players`).then(r => r.json());
+  setPlayerCount(players.length);
+  for (const p of players) addPlayerChip(p);
+
+  socket = io({ transports: ['websocket', 'polling'] });
+  socket.on('connect', () => socket.emit('host_join', { session_id: sessionId }));
+
+  socket.on('player_joined', p => {
+    addPlayerChip(p);
+    setPlayerCount(document.querySelectorAll('.player-chip').length);
+  });
+
+  socket.on('question_started', ({ question, started_at }) => {
+    currentQ = question;
+    showView('question');
+    setPhase('題目進行中', 'pill-cyan');
+    $('#explain-card').classList.add('hidden');
+    $('#explain-pill').classList.add('hidden');
+    renderQuestion(question);
+    startTimer(question.time_limit_sec, started_at);
+  });
+
+  socket.on('answer_progress', ({ question_id, answered, total }) => {
+    if (currentQ && currentQ.question_id === question_id) {
+      $('#answered-count').textContent = answered;
+      $('#answered-total').textContent = total;
+    }
+  });
+
+  socket.on('answer_revealed', ({ question_id, correct, distribution, total, explanation }) => {
+    if (!currentQ || currentQ.question_id !== question_id) return;
+    setPhase('已公布答案', 'pill-green');
+    revealAnswer(correct, distribution, total);
+    if (explanation) {
+      $('#explain-pill').classList.remove('hidden');
+      window._pendingExplain = explanation;
+    }
+    stopTimer();
+    sfx.correct();
+  });
+
+  socket.on('explanation_shown', ({ question_id, explanation }) => {
+    setPhase('詳解中', '');
+    $('#explain-card').classList.remove('hidden');
+    $('#explain-text').textContent = explanation || '（此題未提供詳解）';
+  });
+
+  socket.on('leaderboard', payload => {
+    setPhase(payload.podium ? '🏆 頒獎' : '排行榜', 'pill-amber');
+    if (payload.podium) renderPodium(payload);
+    else renderLeaderboard(payload);
+  });
+
+  socket.on('game_ended', () => {
+    setPhase('已結束', 'pill-soft');
+    showView('ended');
+  });
+
+  bindControls();
+}
+
+function setPhase(label, cls) {
+  const p = $('#phase-pill');
+  p.className = 'pill ' + (cls || '');
+  p.textContent = label;
+}
+function setPlayerCount(n) {
+  $('#player-count').textContent = n;
+  $('#lobby-count').textContent = n;
+}
+
+function addPlayerChip(p) {
+  if (document.querySelector(`.player-chip[data-id="${p.player_id}"]`)) return;
+  const el = document.createElement('div');
+  el.className = 'player-chip';
+  el.dataset.id = p.player_id;
+  el.innerHTML = `<div class="player-avatar">${escapeHtml((p.nickname||'?')[0].toUpperCase())}</div><div>${escapeHtml(p.nickname)}${p.department ? `<div class="text-soft" style="font-size:11px;">${escapeHtml(p.department)}</div>` : ''}</div>`;
+  $('#players-list').appendChild(el);
+}
+
+function showView(name) {
+  for (const v of ['lobby','question','leaderboard','podium','ended']) {
+    $('#view-' + v).classList.toggle('hidden', v !== name);
+  }
+}
+
+function renderQuestion(q) {
+  $('#q-day').textContent = q.day_label || '';
+  $('#q-set').textContent = q.set_name || '';
+  $('#q-no').textContent = '第 ' + (q.question_no ?? '?') + ' 題';
+  $('#q-text').textContent = q.question_text;
+  const grid = $('#options-grid');
+  grid.innerHTML = '';
+  for (const [letter, text] of Object.entries(q.options || { A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d })) {
+    if (!text) continue;
+    const tile = document.createElement('div');
+    tile.className = 'option-tile';
+    tile.dataset.letter = letter;
+    tile.innerHTML = `<div class="letter">${letter}</div><div class="opt-text">${escapeHtml(text)}</div><div class="option-bar" style="width: 0"></div>`;
+    grid.appendChild(tile);
+  }
+  $('#answered-count').textContent = '0';
+  $('#answered-total').textContent = document.querySelectorAll('.player-chip').length;
+}
+
+function revealAnswer(correct, dist, total) {
+  total = total || Object.values(dist || {}).reduce((s,v)=>s+v,0);
+  document.querySelectorAll('.option-tile').forEach(t => {
+    const letter = t.dataset.letter;
+    const cnt = (dist && dist[letter]) || 0;
+    const pct = total ? Math.round(cnt / total * 100) : 0;
+    const bar = t.querySelector('.option-bar');
+    if (bar) bar.style.width = pct + '%';
+    if (letter === correct) t.classList.add('correct');
+    else t.classList.add('wrong');
+    let stat = t.querySelector('.opt-stat');
+    if (!stat) {
+      stat = document.createElement('div');
+      stat.className = 'opt-stat';
+      stat.style.marginLeft = 'auto';
+      stat.style.fontWeight = '700';
+      stat.style.color = 'var(--text-soft)';
+      t.appendChild(stat);
+    }
+    stat.textContent = `${cnt} 人 · ${pct}%`;
+  });
+}
+
+function renderLeaderboard(payload) {
+  showView('leaderboard');
+  $('#lb-title').textContent = payload.title || '即時排行榜';
+  const el = $('#lb-rows');
+  const rows = payload.rows || [];
+  if (!rows.length) { el.innerHTML = '<div class="muted-card">尚無成績資料。</div>'; return; }
+  el.innerHTML = '';
+  rows.slice(0, 10).forEach((r, i) => {
+    const rank = i + 1;
+    const cls = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
+    const row = document.createElement('div');
+    row.className = 'lb-row ' + cls;
+    row.style.opacity = '0';
+    row.innerHTML = `
+      <div class="lb-rank mono">${rank}</div>
+      <div>
+        <div class="lb-name">${escapeHtml(r.nickname)}</div>
+        <div class="lb-meta">答對 ${r.correct} 題 · ${escapeHtml(r.department || '')}</div>
+      </div>
+      <div class="lb-score mono">${r.score}</div>`;
+    el.appendChild(row);
+    setTimeout(() => { row.style.transition = 'opacity .4s'; row.style.opacity = '1'; }, i * 70);
+  });
+  sfx.fanfare();
+}
+
+function renderPodium(payload) {
+  showView('podium');
+  $('#podium-title').textContent = payload.title || '🏆 排行榜';
+  $('#podium-subtitle').textContent = '從第 3 名開始公布';
+  const rows = payload.rows || [];
+  const others = $('#podium-others');
+  others.innerHTML = '';
+
+  // Hide all podiums initially
+  ['#podium-1','#podium-2','#podium-3'].forEach(s => $(s).classList.remove('revealed'));
+
+  // Setup data
+  const data = {
+    1: rows[0],
+    2: rows[1],
+    3: rows[2],
+  };
+  for (let rank = 1; rank <= 3; rank++) {
+    const r = data[rank];
+    const el = $('#podium-' + rank);
+    const avatar = el.querySelector('.avatar');
+    const name   = el.querySelector('.name');
+    const meta   = el.querySelector('.meta');
+    const score  = el.querySelector('.score');
+    if (r) {
+      avatar.textContent = (r.nickname || '?')[0].toUpperCase();
+      name.textContent   = r.nickname;
+      meta.textContent   = `答對 ${r.correct} 題 · ${r.department || ''}`;
+      score.textContent  = r.score;
+    } else {
+      avatar.textContent = '–';
+      name.textContent   = '（從缺）';
+      meta.textContent   = '';
+      score.textContent  = '0';
+    }
+  }
+
+  // Reveal 3rd → 2nd → 1st with sounds + confetti for 1st
+  setTimeout(() => { $('#podium-3').classList.add('revealed'); sfx.podium3(); }, 800);
+  setTimeout(() => { $('#podium-2').classList.add('revealed'); sfx.podium2(); }, 2800);
+  setTimeout(() => {
+    $('#podium-1').classList.add('revealed');
+    sfx.podium1();
+    fireConfetti();
+  }, 4800);
+
+  // Show 4-10 as a small list after podium reveal
+  setTimeout(() => {
+    if (rows.length > 3) {
+      others.innerHTML = '<div class="row" style="justify-content:center; gap:8px; flex-wrap:wrap; margin-top:24px;">' +
+        rows.slice(3, 10).map((r, i) => `<span class="pill pill-soft" style="font-size:14px;">${i+4}. ${escapeHtml(r.nickname)} · <span class="mono">${r.score}</span></span>`).join('') +
+        '</div>';
+    }
+  }, 6500);
+}
+
+function fireConfetti() {
+  const colors = ['#FCD34D','#F59E0B','#4F46E5','#06B6D4','#10B981','#EF4444','#A855F7'];
+  for (let i = 0; i < 90; i++) {
+    const d = document.createElement('div');
+    d.className = 'confetti';
+    d.style.left = Math.random() * 100 + 'vw';
+    d.style.background = colors[Math.floor(Math.random() * colors.length)];
+    d.style.animationDelay = (Math.random() * 1.2) + 's';
+    d.style.animationDuration = (2.4 + Math.random() * 1.4) + 's';
+    d.style.transform = `rotate(${Math.random() * 360}deg)`;
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 4500);
+  }
+}
+
+function startTimer(seconds, startedAt) {
+  stopTimer();
+  $('#timer').classList.remove('hidden');
+  lastBeepSec = seconds + 1;
+  const update = () => {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    const left = Math.max(0, seconds - elapsed);
+    const ceilLeft = Math.ceil(left);
+    $('#timer').textContent = ceilLeft;
+    // Last 5 seconds: tick / urgent
+    if (ceilLeft <= 5 && ceilLeft >= 1 && ceilLeft !== lastBeepSec) {
+      lastBeepSec = ceilLeft;
+      if (ceilLeft <= 3) {
+        $('#timer').classList.add('urgent');
+        sfx.urgent();
+      } else {
+        sfx.tick();
+      }
+    }
+    if (left <= 0) {
+      sfx.timeUp();
+      stopTimer();
+    }
+  };
+  update();
+  timerInterval = setInterval(update, 200);
+}
+function stopTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
+  setTimeout(() => { $('#timer').classList.add('hidden'); $('#timer').classList.remove('urgent'); }, 800);
+}
+
+function bindControls() {
+  $('#btn-next').onclick    = () => { ensureAudio(); socket.emit('host_next_question'); };
+  $('#btn-reveal').onclick  = () => socket.emit('host_reveal');
+  $('#btn-explain').onclick = () => socket.emit('host_explain');
+  $('#btn-lobby').onclick   = () => showView('lobby');
+  $('#btn-mute').onclick = () => {
+    muted = !muted;
+    $('#btn-mute').textContent = muted ? '🔇 音效關' : '🔊 音效開';
+  };
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>
