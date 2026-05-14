@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: quizly
+    runtime: node
+    plan: free               # Change to "starter" ($7/mo) to remove sleep-after-15-min-idle
+    region: singapore        # Closer to TW/SEA participants. Change to "oregon" / "frankfurt" if preferred.
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: quiz-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1              # Persistent storage for SQLite + uploads
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000          # Render injects PORT automatically; set explicit for clarity

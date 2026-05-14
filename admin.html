@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>後台管理 · Quizly</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" style="text-decoration: none; color: inherit;">
+      <div class="brand-mark">
+        <svg viewBox="0 0 64 64" fill="none">
+          <circle cx="28" cy="32" r="13" stroke="white" stroke-width="4" fill="none"/>
+          <path d="M37 41 L46 50" stroke="white" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="46" cy="50" r="3.5" fill="white"/>
+          <path d="M48 14 L50 18 L54 20 L50 22 L48 26 L46 22 L42 20 L46 18 Z" fill="white" fill-opacity=".85"/>
+        </svg>
+      </div>
+      <div>
+        <div>Quizly</div>
+        <div class="brand-tag">Admin Console</div>
+      </div>
+    </a>
+    <div class="row">
+      <a class="btn btn-ghost" href="/api/template.xlsx">下載題庫範本</a>
+      <a class="btn" href="/host.html">主持人現場 →</a>
+    </div>
+  </header>
+
+  <main class="app-shell">
+
+    <!-- Create activity -->
+    <section class="card">
+      <h2 class="card-title">建立新活動</h2>
+      <p class="card-sub">一個活動可以包含多天 (Day 1, Day 2…) 與多個題組。</p>
+      <form id="create-form" class="section-grid">
+        <div class="col-6 field">
+          <label>活動名稱</label>
+          <input class="input" name="activity_name" placeholder="2026 海外交流互動競賽" required />
+        </div>
+        <div class="col-3 field">
+          <label>開始日期</label>
+          <input class="input" type="date" name="start_date" />
+        </div>
+        <div class="col-3 field">
+          <label>結束日期</label>
+          <input class="input" type="date" name="end_date" />
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit">建立活動</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Activities list -->
+    <section class="card">
+      <h2 class="card-title">所有活動</h2>
+      <p class="card-sub">點任一活動可匯入題庫、開啟現場、下載結果。</p>
+      <div id="activities-list"></div>
+    </section>
+
+    <!-- Active activity panel -->
+    <section class="card hidden" id="activity-panel">
+      <div class="row-between">
+        <h2 class="card-title" id="panel-title">活動</h2>
+        <span class="pill pill-soft" id="panel-id"></span>
+      </div>
+
+      <div class="section-grid" style="margin-top: 18px;">
+        <div class="col-6">
+          <h3 style="margin: 0 0 8px; font-size: 15px;">匯入題庫 (Excel)</h3>
+          <p class="text-soft" style="margin: 0 0 12px; font-size: 13px;">使用範本格式：activity_name / day / question_set / question_no / question_type / question_text / option_a~d / correct_answer / explanation / base_score / time_limit_sec</p>
+          <form id="import-form" enctype="multipart/form-data">
+            <input class="input" type="file" name="file" accept=".xlsx,.xls" required />
+            <button class="btn btn-primary" type="submit" style="margin-top: 12px;">上傳並匯入</button>
+          </form>
+          <div id="import-msg" style="margin-top: 12px;"></div>
+        </div>
+
+        <div class="col-6">
+          <h3 style="margin: 0 0 8px; font-size: 15px;">開啟現場 / 匯出結果</h3>
+          <p class="text-soft" style="margin: 0 0 12px; font-size: 13px;">產生現場代碼，主持人開啟投影頁面後，參賽者掃描 QR Code 加入。</p>
+          <div class="row">
+            <button class="btn btn-primary" id="start-session-btn">建立現場代碼 →</button>
+            <a class="btn btn-ghost hidden" id="open-host-btn" target="_blank">開啟主持人畫面</a>
+          </div>
+          <div id="session-info" style="margin-top: 14px;"></div>
+          <div class="divider"></div>
+          <div id="export-area"></div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <h3 style="margin: 0 0 8px; font-size: 15px;">題庫內容</h3>
+      <div id="sets-list"></div>
+    </section>
+
+  </main>
+
+<script>
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+let currentActivity = null;
+let sessionsForActivity = []; // remembered codes during this visit
+
+async function fetchJSON(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function loadActivities() {
+  const list = await fetchJSON('/api/activities');
+  const el = $('#activities-list');
+  if (!list.length) {
+    el.innerHTML = '<div class="muted-card">尚未建立任何活動。</div>';
+    return;
+  }
+  el.innerHTML = '';
+  for (const a of list) {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.style.padding = '16px';
+    div.style.marginBottom = '10px';
+    div.innerHTML = `
+      <div class="row-between">
+        <div>
+          <div style="font-weight: 650;">${escapeHtml(a.activity_name)}</div>
+          <div class="text-soft" style="font-size: 13px;">
+            <span class="pill pill-cyan">#${a.activity_id}</span>
+            ${a.set_count || 0} 題組 · ${a.question_count || 0} 題
+            ${a.start_date ? `· ${a.start_date}` : ''}${a.end_date ? ` ~ ${a.end_date}` : ''}
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn" data-open="${a.activity_id}">打開</button>
+          <button class="btn btn-ghost" data-del="${a.activity_id}">刪除</button>
+        </div>
+      </div>`;
+    el.appendChild(div);
+  }
+  $$('#activities-list [data-open]').forEach(b => b.onclick = () => openActivity(parseInt(b.dataset.open, 10)));
+  $$('#activities-list [data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('確定刪除？所有題目與成績都會被移除。')) return;
+    await fetch('/api/activities/' + b.dataset.del, { method: 'DELETE' });
+    await loadActivities();
+    if (currentActivity && currentActivity.activity_id == b.dataset.del) {
+      $('#activity-panel').classList.add('hidden');
+      currentActivity = null;
+    }
+  });
+}
+
+async function openActivity(id) {
+  currentActivity = await fetchJSON('/api/activities/' + id);
+  $('#activity-panel').classList.remove('hidden');
+  $('#panel-title').textContent = currentActivity.activity_name;
+  $('#panel-id').textContent = '#' + currentActivity.activity_id;
+  // restore export area for past sessions of this activity
+  renderSessionsArea();
+  // sets
+  const setsEl = $('#sets-list');
+  if (!currentActivity.sets.length) {
+    setsEl.innerHTML = '<div class="muted-card">尚未匯入題庫。請使用上方的「上傳並匯入」。</div>';
+  } else {
+    setsEl.innerHTML = '';
+    for (const s of currentActivity.sets) {
+      const div = document.createElement('div');
+      div.style.marginBottom = '12px';
+      div.innerHTML = `
+        <div class="row" style="margin-bottom: 8px;">
+          <span class="pill pill-cyan">${escapeHtml(s.day_label || '')}</span>
+          <strong>${escapeHtml(s.set_name || '')}</strong>
+          <span class="text-soft">· ${s.questions.length} 題</span>
+        </div>
+        <table class="table">
+          <thead><tr><th style="width:48px">#</th><th>題目</th><th style="width:80px">正解</th><th style="width:80px">秒數</th></tr></thead>
+          <tbody>
+            ${s.questions.map(q => `
+              <tr>
+                <td>${q.question_no ?? ''}</td>
+                <td>${escapeHtml(q.question_text || '')}</td>
+                <td><span class="pill pill-green">${escapeHtml(q.correct_answer || '')}</span></td>
+                <td class="mono">${q.time_limit_sec}s</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+      setsEl.appendChild(div);
+    }
+  }
+  $('#activity-panel').scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderSessionsArea() {
+  const ex = $('#export-area');
+  if (!sessionsForActivity.length) { ex.innerHTML = ''; return; }
+  ex.innerHTML = '<div class="text-soft" style="font-size: 13px; margin-bottom: 6px;">本次活動已建立的現場：</div>' +
+    sessionsForActivity.map(c => `
+      <div class="row" style="margin-bottom: 6px;">
+        <span class="pill">${c}</span>
+        <a class="btn btn-ghost" href="/host.html?s=${c}" target="_blank">主持人畫面</a>
+        <a class="btn btn-ghost" href="/api/sessions/${c}/export.xlsx">下載 Excel 結果</a>
+      </div>`).join('');
+}
+
+$('#create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  await fetchJSON('/api/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  e.target.reset();
+  await loadActivities();
+});
+
+$('#import-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!currentActivity) return;
+  const fd = new FormData(e.target);
+  $('#import-msg').innerHTML = '<span class="pill pill-soft">上傳中…</span>';
+  const r = await fetch(`/api/activities/${currentActivity.activity_id}/import`, { method: 'POST', body: fd });
+  const j = await r.json();
+  if (r.ok) {
+    $('#import-msg').innerHTML = `<span class="pill pill-green">已匯入 ${j.questions_created} 題 / ${j.sets_created} 個新題組</span>`;
+    await openActivity(currentActivity.activity_id);
+    await loadActivities();
+  } else {
+    $('#import-msg').innerHTML = `<span class="pill" style="background:#FEF2F2; color:var(--danger)">匯入失敗：${j.error}</span>`;
+  }
+});
+
+$('#start-session-btn').addEventListener('click', async () => {
+  if (!currentActivity) return;
+  const j = await fetchJSON('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activity_id: currentActivity.activity_id }) });
+  sessionsForActivity.unshift(j.session_id);
+  $('#session-info').innerHTML = `
+    <div style="font-size: 28px; font-weight: 800; letter-spacing: .2em; margin: 6px 0;">${j.session_id}</div>
+    <div class="text-soft" style="font-size: 13px;">在「主持人畫面」會自動顯示此代碼的 QR Code。</div>`;
+  $('#open-host-btn').classList.remove('hidden');
+  $('#open-host-btn').href = '/host.html?s=' + j.session_id;
+  renderSessionsArea();
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+loadActivities();
+</script>
+</body>
+</html>

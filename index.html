@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quizly · 互動答題競賽平台</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 64 64" fill="none">
+          <circle cx="28" cy="32" r="13" stroke="white" stroke-width="4" fill="none"/>
+          <path d="M37 41 L46 50" stroke="white" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="46" cy="50" r="3.5" fill="white"/>
+          <path d="M48 14 L50 18 L54 20 L50 22 L48 26 L46 22 L42 20 L46 18 Z" fill="white" fill-opacity=".85"/>
+        </svg>
+      </div>
+      <div>
+        <div>Quizly</div>
+        <div class="brand-tag">Real-time Quiz Platform</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="card" style="background: var(--gradient-soft); border: none; padding: 56px 40px; text-align: center;">
+      <div class="pill pill-cyan" style="margin: 0 auto 16px;">v1.0 · MVP</div>
+      <h1 style="font-size: clamp(32px, 4vw, 48px); letter-spacing: -.025em; margin: 0 0 12px;">互動答題競賽平台</h1>
+      <p style="font-size: 18px; color: var(--text-soft); max-width: 640px; margin: 0 auto 32px;">
+        支援全球連線、100 人即時答題、主持人控場、Excel 匯入與成績匯出。<br/>
+        主持人投影現場 QR Code，參賽者手機掃描即可入場。
+      </p>
+      <div class="row" style="justify-content: center;">
+        <a class="btn btn-primary btn-lg" href="/admin.html">前往後台管理</a>
+        <a class="btn btn-lg" href="/host.html">主持人現場</a>
+      </div>
+    </section>
+
+    <div class="section-grid" style="margin-top: 28px;">
+      <div class="col-4 card">
+        <div class="pill pill-cyan">1</div>
+        <h3 style="margin: 10px 0 6px;">建立活動</h3>
+        <p class="text-soft" style="margin: 0;">後台建立活動、匯入 Excel 題庫（多天、多題組、多題目）。</p>
+      </div>
+      <div class="col-4 card">
+        <div class="pill">2</div>
+        <h3 style="margin: 10px 0 6px;">開啟現場</h3>
+        <p class="text-soft" style="margin: 0;">產生 QR Code，投影到大螢幕，全球參賽者手機加入。</p>
+      </div>
+      <div class="col-4 card">
+        <div class="pill pill-green">3</div>
+        <h3 style="margin: 10px 0 6px;">主持人控場</h3>
+        <p class="text-soft" style="margin: 0;">手動切題、公布答案、顯示詳解、即時/單日/總排名。</p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
