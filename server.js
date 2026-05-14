@@ -20,7 +20,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.set('trust proxy', true); // honor x-forwarded-* on Render / Cloudflare / etc.
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ------------- Utility -------------
 function shortCode(len = 6) {
