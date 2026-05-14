@@ -509,9 +509,10 @@ io.on('connection', socket => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`\n  Quiz platform running on  http://localhost:${PORT}\n`);
-  console.log('  Admin panel:    /admin.html');
-  console.log('  Host display:   /host.html?s=<SESSION_CODE>');
-  console.log('  Player join:    /join.html?s=<SESSION_CODE>\n');
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Quiz platform listening on 0.0.0.0:${PORT}`);
+  console.log(`PUBLIC_URL = ${process.env.PUBLIC_URL || '(not set)'}`);
 });
+
+process.on('uncaughtException',  (err) => console.error('UNCAUGHT EXCEPTION:', err));
+process.on('unhandledRejection', (err) => console.error('UNHANDLED REJECTION:', err));
